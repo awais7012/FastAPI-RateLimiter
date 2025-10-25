@@ -1,197 +1,185 @@
-# compare_algorithms.py
+# stress_test.py
 """
-Compare Token Bucket vs Queue-based rate limiters side-by-side
+Stress test for RateLimiter with multi-layer rate limiting
+Save this to: E:\coding\fastApi\stress_test.py
 """
 import threading
 import time
-import sys, os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import sys
+import os
 
-from RateLimiter.token_bucket import TokenBucketLimiter
-from RateLimiter.queue_limiter import QueueLimiter
+# Add src directory to Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(current_dir, 'src')
+sys.path.insert(0, src_dir)
+
+from RateLimiter import RateLimiter
 import redis
 
 # === CONFIG ===
-USE_REDIS = False          # set True to use Redis
+USE_REDIS = False          # set False to use in-memory mode
 REDIS_URL = "redis://localhost:6379"
-TEST_DURATION = 10         # seconds
-REQUESTS_PER_SECOND = 3    # target request rate per user
+TEST_DURATION = 12         # seconds to run the test
+PRINT_EVERY = 1            # seconds between status prints
 
-# Rate limiter settings (same for both)
-CAPACITY = 5
-FILL_RATE = 1.0  # 1 token/request per second
+# Rate limiter settings
+PER_USER_FILL = 1.0   # tokens/sec
+PER_USER_CAP = 5      # burst capacity
 
-# Test scenarios
-test_users = [
-    ("steady_user", 1.0/REQUESTS_PER_SECOND),    # exactly at limit
-    ("bursty_user", 0.1),                         # burst then wait
-    ("slow_user", 2.0),                           # well below limit
+IP_FILL = 0.5
+IP_CAP = 3
+
+GLOBAL_FILL = 2.0
+GLOBAL_CAP = 10
+
+# Users to simulate: (user_id, sleep_between_requests)
+users = [
+    ("user_normal", 0.5),   # normal user: one request every 0.5s
+    ("user_bursty", 0.05),  # bursty/spammer: many requests quickly
+    ("user_light", 1.5),    # light user: one request every 1.5s
+    ("user_medium", 0.3),   # moderate user
 ]
 
 
+# === OPTIONAL: flush redis for a clean run ===
 def flush_redis():
     try:
         r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
         r.flushall()
-        print("[redis] FLUSHALL done\n")
+        print("[redis] FLUSHALL done")
     except Exception as e:
-        print(f"[redis] flush failed: {e}\n")
+        print("[redis] flush failed:", e)
 
 
-def user_worker(user_id, sleep_interval, results, stop_event, limiter, limiter_type):
-    """Worker thread for a single user"""
+# === Worker thread that simulates a single user ===
+def user_worker(user_id, sleep_interval, results, stop_event,
+                per_user_rl, ip_rl, global_rl, use_ip_as_id=False):
+    """
+    results: dict to store counts: results[user_id] = {"allowed": n, "blocked": m}
+    stop_event: threading.Event to stop the loop
+    """
     allowed = 0
     blocked = 0
-    
+    ip = "192.0.2.{}".format(hash(user_id) % 255)
+
     while not stop_event.is_set():
-        ok = limiter.allow_request(user_id)
-        if ok:
+        # check global first (if provided)
+        if global_rl:
+            ok_global = global_rl.allow_request(None)
+            if not ok_global:
+                blocked += 1
+                # small sleep to avoid pure spin if globally blocked
+                time.sleep(sleep_interval)
+                continue
+
+        # check IP limiter
+        if ip_rl:
+            ok_ip = ip_rl.allow_request(ip)
+            if not ok_ip:
+                blocked += 1
+                time.sleep(sleep_interval)
+                continue
+
+        # check per-user limiter
+        identifier = user_id if not use_ip_as_id else ip
+        ok_user = per_user_rl.allow_request(identifier)
+        if ok_user:
             allowed += 1
         else:
             blocked += 1
-        
+
         time.sleep(sleep_interval)
+
+    results[user_id] = {"allowed": allowed, "blocked": blocked}
+
+
+def run_test(use_redis=USE_REDIS):
+    if use_redis:
+        # clean redis keys to start fresh
+        flush_redis()
+
+    backend = "redis" if use_redis else "memory"
     
-    results[f"{user_id}_{limiter_type}"] = {
-        "allowed": allowed,
-        "blocked": blocked
-    }
-
-
-def run_limiter_test(limiter_class, limiter_name, backend, redis_client):
-    """Run test for a specific limiter type"""
-    limiter = limiter_class(
-        capacity=CAPACITY,
-        fill_rate=FILL_RATE,
+    print(f"\nCreating rate limiters (backend={backend})...")
+    
+    per_user_rl = RateLimiter(
+        fill_rate=PER_USER_FILL,
+        capacity=PER_USER_CAP,
         scope="user",
         backend=backend,
-        redis_client=redis_client
+        redis_url=REDIS_URL if use_redis else None
     )
     
+    ip_rl = RateLimiter(
+        fill_rate=IP_FILL,
+        capacity=IP_CAP,
+        scope="ip",
+        backend=backend,
+        redis_url=REDIS_URL if use_redis else None
+    )
+    
+    global_rl = RateLimiter(
+        fill_rate=GLOBAL_FILL,
+        capacity=GLOBAL_CAP,
+        scope="global",
+        backend=backend,
+        redis_url=REDIS_URL if use_redis else None
+    )
+    
+    print("✓ Rate limiters created\n")
+
     stop_event = threading.Event()
     results = {}
     threads = []
-    
-    # Start worker threads
-    for user_id, interval in test_users:
+
+    # create a thread per user
+    print(f"Starting {len(users)} user threads...\n")
+    for user_id, interval in users:
         t = threading.Thread(
             target=user_worker,
-            args=(user_id, interval, results, stop_event, limiter, limiter_name)
+            args=(user_id, interval, results, stop_event, per_user_rl, ip_rl, global_rl)
         )
         t.start()
         threads.append(t)
-    
-    # Run test
-    start_time = time.time()
-    time.sleep(TEST_DURATION)
-    
-    # Stop workers
-    stop_event.set()
-    for t in threads:
-        t.join(timeout=2)
-    
-    elapsed = time.time() - start_time
-    return results, elapsed
 
+    # status loop
+    start = time.time()
+    try:
+        while time.time() - start < TEST_DURATION:
+            time.sleep(PRINT_EVERY)
+            elapsed = int(time.time() - start)
+            print(f"-- elapsed: {elapsed}s --")
+            for u in users:
+                uid = u[0]
+                summary = results.get(uid, {"allowed": 0, "blocked": 0})
+                print(f"  {uid}: allowed={summary['allowed']} blocked={summary['blocked']}")
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+    finally:
+        # stop workers
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=2)
 
-def print_comparison(tb_results, queue_results, elapsed):
-    """Print side-by-side comparison"""
-    print("\n" + "="*80)
-    print(f"{'USER':<20} | {'TOKEN BUCKET':<25} | {'QUEUE LIMITER':<25}")
-    print("="*80)
-    
-    tb_total_allowed = 0
-    tb_total_blocked = 0
-    queue_total_allowed = 0
-    queue_total_blocked = 0
-    
-    for user_id, _ in test_users:
-        tb_key = f"{user_id}_token_bucket"
-        queue_key = f"{user_id}_queue"
-        
-        tb_stats = tb_results.get(tb_key, {"allowed": 0, "blocked": 0})
-        queue_stats = queue_results.get(queue_key, {"allowed": 0, "blocked": 0})
-        
-        tb_total_allowed += tb_stats["allowed"]
-        tb_total_blocked += tb_stats["blocked"]
-        queue_total_allowed += queue_stats["allowed"]
-        queue_total_blocked += queue_stats["blocked"]
-        
-        tb_rate = tb_stats["allowed"] / elapsed
-        queue_rate = queue_stats["allowed"] / elapsed
-        
-        print(f"{user_id:<20} | "
-              f"✓{tb_stats['allowed']:>4} ✗{tb_stats['blocked']:>4} ({tb_rate:>4.1f}/s) | "
-              f"✓{queue_stats['allowed']:>4} ✗{queue_stats['blocked']:>4} ({queue_rate:>4.1f}/s)")
-    
-    print("="*80)
-    print(f"{'TOTAL':<20} | "
-          f"✓{tb_total_allowed:>4} ✗{tb_total_blocked:>4} ({tb_total_allowed/elapsed:>4.1f}/s) | "
-          f"✓{queue_total_allowed:>4} ✗{queue_total_blocked:>4} ({queue_total_allowed/elapsed:>4.1f}/s)")
-    print("="*80)
-    
-    # Analysis
-    print("\n📊 ANALYSIS:")
-    print(f"Token Bucket:")
-    print(f"  • Smoother rate: {tb_total_allowed/elapsed:.2f} req/s")
-    print(f"  • Block rate: {tb_total_blocked/(tb_total_allowed+tb_total_blocked)*100:.1f}%")
-    
-    print(f"\nQueue Limiter:")
-    print(f"  • Stricter enforcement: {queue_total_allowed/elapsed:.2f} req/s")
-    print(f"  • Block rate: {queue_total_blocked/(queue_total_allowed+queue_total_blocked)*100:.1f}%")
-    
-    diff = tb_total_allowed - queue_total_allowed
-    print(f"\n🔍 Difference: Token Bucket allowed {diff:+d} more requests ({diff/queue_total_allowed*100:+.1f}%)")
-    
-    if diff > 0:
-        print("   → Token Bucket is more permissive (allows burst recovery)")
-    elif diff < 0:
-        print("   → Queue Limiter is more permissive")
-    else:
-        print("   → Both algorithms performed identically")
+    # final report
+    print("\n" + "="*60)
+    print("=== FINAL REPORT ===")
+    print("="*60)
+    total_allowed = 0
+    total_blocked = 0
+    for uid in [u[0] for u in users]:
+        r = results.get(uid, {"allowed": 0, "blocked": 0})
+        print(f"{uid}: allowed={r['allowed']} blocked={r['blocked']}")
+        total_allowed += r['allowed']
+        total_blocked += r['blocked']
 
-
-def main():
-    print("="*80)
-    print("RATE LIMITER ALGORITHM COMPARISON")
-    print("="*80)
-    print(f"Duration: {TEST_DURATION}s")
-    print(f"Capacity: {CAPACITY} requests")
-    print(f"Fill Rate: {FILL_RATE} tokens/sec")
-    print(f"Backend: {'Redis' if USE_REDIS else 'Memory'}")
-    print("="*80)
-    
-    if USE_REDIS:
-        flush_redis()
-        redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
-    else:
-        redis_client = None
-    
-    backend = "redis" if USE_REDIS else "memory"
-    
-    # Run Token Bucket test
-    print("\n🪣 Running Token Bucket test...")
-    tb_results, tb_elapsed = run_limiter_test(
-        TokenBucketLimiter, "token_bucket", backend, redis_client
-    )
-    
-    # Small delay between tests
-    time.sleep(1)
-    
-    if USE_REDIS:
-        flush_redis()
-    
-    # Run Queue Limiter test
-    print("📋 Running Queue Limiter test...")
-    queue_results, queue_elapsed = run_limiter_test(
-        QueueLimiter, "queue", backend, redis_client
-    )
-    
-    # Print comparison
-    print_comparison(tb_results, queue_results, TEST_DURATION)
-    
-    print("\n✅ Test complete!")
+    print(f"\nTotal allowed={total_allowed} blocked={total_blocked}")
+    print(f"Average rate: {total_allowed/TEST_DURATION:.2f} requests/sec")
+    print("="*60)
 
 
 if __name__ == "__main__":
-    main()
+    print("="*60)
+    print("Starting stress test (per-user + per-ip + global layers)")
+    print("="*60)
+    run_test(use_redis=USE_REDIS)
