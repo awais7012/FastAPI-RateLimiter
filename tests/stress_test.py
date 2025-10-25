@@ -1,11 +1,26 @@
 # stress_test.py
+"""
+Stress test for RateLimiter with multi-layer rate limiting
+Save this to: E:\coding\fastApi\stress_test.py
+"""
 import threading
 import time
-from RateLimiter import RateLimiter  # or: from rate_limiter import RateLimiter
+import sys
+import os
+
+# Add src/ to path so RateLimiter can be imported
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from RateLimiter.token_bucket import TokenBucketLimiter
+from RateLimiter.queue_limiter import QueueLimiter
+
+##src_dir = os.path.join(current_dir, 'src')
+
+
 import redis
 
 # === CONFIG ===
-USE_REDIS = True           # set False to use in-memory mode
+USE_REDIS = False          # set False to use in-memory mode
 REDIS_URL = "redis://localhost:6379"
 TEST_DURATION = 12         # seconds to run the test
 PRINT_EVERY = 1            # seconds between status prints
@@ -87,18 +102,41 @@ def run_test(use_redis=USE_REDIS):
         flush_redis()
 
     backend = "redis" if use_redis else "memory"
-    per_user_rl = RateLimiter(fill_rate=PER_USER_FILL, capacity=PER_USER_CAP,
-                              scope="user", backend=backend, redis_url=REDIS_URL)
-    ip_rl = RateLimiter(fill_rate=IP_FILL, capacity=IP_CAP,
-                        scope="ip", backend=backend, redis_url=REDIS_URL)
-    global_rl = RateLimiter(fill_rate=GLOBAL_FILL, capacity=GLOBAL_CAP,
-                            scope="global", backend=backend, redis_url=REDIS_URL)
+    
+    print(f"\nCreating rate limiters (backend={backend})...")
+    
+    per_user_rl = RateLimiter(
+        fill_rate=PER_USER_FILL,
+        capacity=PER_USER_CAP,
+        scope="user",
+        backend=backend,
+        redis_url=REDIS_URL if use_redis else None
+    )
+    
+    ip_rl = RateLimiter(
+        fill_rate=IP_FILL,
+        capacity=IP_CAP,
+        scope="ip",
+        backend=backend,
+        redis_url=REDIS_URL if use_redis else None
+    )
+    
+    global_rl = RateLimiter(
+        fill_rate=GLOBAL_FILL,
+        capacity=GLOBAL_CAP,
+        scope="global",
+        backend=backend,
+        redis_url=REDIS_URL if use_redis else None
+    )
+    
+    print("✓ Rate limiters created\n")
 
     stop_event = threading.Event()
     results = {}
     threads = []
 
     # create a thread per user
+    print(f"Starting {len(users)} user threads...\n")
     for user_id, interval in users:
         t = threading.Thread(
             target=user_worker,
@@ -119,7 +157,7 @@ def run_test(use_redis=USE_REDIS):
                 summary = results.get(uid, {"allowed": 0, "blocked": 0})
                 print(f"  {uid}: allowed={summary['allowed']} blocked={summary['blocked']}")
     except KeyboardInterrupt:
-        print("Interrupted by user")
+        print("\nInterrupted by user")
     finally:
         # stop workers
         stop_event.set()
@@ -127,7 +165,9 @@ def run_test(use_redis=USE_REDIS):
             t.join(timeout=2)
 
     # final report
-    print("\n=== FINAL REPORT ===")
+    print("\n" + "="*60)
+    print("=== FINAL REPORT ===")
+    print("="*60)
     total_allowed = 0
     total_blocked = 0
     for uid in [u[0] for u in users]:
@@ -137,8 +177,12 @@ def run_test(use_redis=USE_REDIS):
         total_blocked += r['blocked']
 
     print(f"\nTotal allowed={total_allowed} blocked={total_blocked}")
+    print(f"Average rate: {total_allowed/TEST_DURATION:.2f} requests/sec")
+    print("="*60)
 
 
 if __name__ == "__main__":
+    print("="*60)
     print("Starting stress test (per-user + per-ip + global layers)")
+    print("="*60)
     run_test(use_redis=USE_REDIS)
