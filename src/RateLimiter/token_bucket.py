@@ -40,3 +40,8 @@ class TokenBucketLimiter(BaseRateLimiter):
 
         self._set_data(key, {"tokens_remaining": tokens, "last_fill_time": now})
         return allowed
+    
+    def reset(self, identifier=None):
+        """Reset token bucket for a given identifier"""
+        key = self._get_key(identifier)
+        self._delete_from_backend(key)
