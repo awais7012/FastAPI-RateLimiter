@@ -6,12 +6,54 @@ import os
 from collections import defaultdict
 from typing import Optional
 
-# Add src/ to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+# Add src/ to path - TWO methods to ensure it works
+src_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src'))
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
-from RateLimiter.token_bucket import TokenBucketLimiter
-from RateLimiter.leaky_bucket import LeakyBucketLimiter
-from RateLimiter.queue_limiter import QueueLimiter
+# Also add parent directory
+parent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if parent_path not in sys.path:
+    sys.path.insert(0, parent_path)
+
+# Try importing from both paths
+try:
+    from RateLimiter.token_bucket import TokenBucketLimiter
+    from RateLimiter.leaky_bucket import LeakyBucketLimiter
+    from RateLimiter.queue_limiter import QueueLimiter
+except ImportError:
+    from src.RateLimiter.token_bucket import TokenBucketLimiter
+    from src.RateLimiter.leaky_bucket import LeakyBucketLimiter
+    from src.RateLimiter.queue_limiter import QueueLimiter
+
+# Import window-based limiters
+FixedWindowRateLimiter = None
+SlidingWindowRateLimiter = None
+SlidingWindowLogRateLimiter = None
+
+try:
+    from RateLimiter.fixed_window import FixedWindowRateLimiter
+except ImportError:
+    try:
+        from src.RateLimiter.fixed_window import FixedWindowRateLimiter
+    except ImportError:
+        print("⚠️  FixedWindowRateLimiter not found, will skip")
+
+try:
+    from RateLimiter.sliding_window import SlidingWindowRateLimiter
+except ImportError:
+    try:
+        from src.RateLimiter.sliding_window import SlidingWindowRateLimiter
+    except ImportError:
+        print("⚠️  SlidingWindowRateLimiter not found, will skip")
+
+try:
+    from RateLimiter.sliding_window_log import SlidingWindowLogRateLimiter
+except ImportError:
+    try:
+        from src.RateLimiter.sliding_window_log import SlidingWindowLogRateLimiter
+    except ImportError:
+        print("⚠️  SlidingWindowLogRateLimiter not found, will skip")
 
 # Optional Redis support
 try:
@@ -46,7 +88,7 @@ REDIS_CONFIG = {
     "host": "localhost",
     "port": 6379,
     "db": 0,
-    "decode_responses": False  # We handle encoding ourselves
+    "decode_responses": True  # Important for consistent behavior
 }
 
 
@@ -196,8 +238,13 @@ def run_single_test(limiter_class, limiter_name: str, backend: str, redis_client
             backend=backend,
             redis_client=redis_client
         )
+        
+        print(f"✅ Created limiters successfully")
+        
     except Exception as e:
         print(f"❌ Failed to create limiters: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     
     stats = Stats()
@@ -269,6 +316,7 @@ def get_redis_client():
         return client
     except Exception as e:
         print(f"⚠️  Redis connection failed: {e}")
+        print(f"   Make sure Redis is running: docker run -d -p 6379:6379 redis")
         return None
 
 
@@ -285,6 +333,64 @@ def cleanup_redis(redis_client):
             print(f"⚠️  Redis cleanup failed: {e}")
 
 
+def test_basic_functionality():
+    """Quick sanity test before running full suite"""
+    print("\n" + "="*90)
+    print("  BASIC FUNCTIONALITY TEST")
+    print("="*90)
+    
+    limiters_to_test = [
+        (TokenBucketLimiter, "Token Bucket"),
+        (LeakyBucketLimiter, "Leaky Bucket"),
+        (QueueLimiter, "Queue Limiter"),
+    ]
+    
+    # Add window-based limiters if available
+    if FixedWindowRateLimiter:
+        limiters_to_test.append((FixedWindowRateLimiter, "Fixed Window"))
+    if SlidingWindowRateLimiter:
+        limiters_to_test.append((SlidingWindowRateLimiter, "Sliding Window"))
+    if SlidingWindowLogRateLimiter:
+        limiters_to_test.append((SlidingWindowLogRateLimiter, "Sliding Window Log"))
+    
+    print("\nTesting each limiter with basic operations...")
+    
+    all_passed = True
+    
+    for limiter_class, limiter_name in limiters_to_test:
+        try:
+            # Test with memory backend
+            limiter = limiter_class(
+                capacity=5,
+                fill_rate=1.0,
+                scope="user",
+                backend="memory"
+            )
+            
+            # Test basic allow/deny
+            allowed_count = 0
+            for i in range(10):
+                if limiter.allow_request("test_user"):
+                    allowed_count += 1
+            
+            if allowed_count == 5:  # Should allow exactly capacity
+                print(f"  ✅ {limiter_name:<25} - PASSED (allowed {allowed_count}/10)")
+            else:
+                print(f"  ⚠️  {limiter_name:<25} - UNEXPECTED (allowed {allowed_count}/10, expected 5)")
+                all_passed = False
+                
+        except Exception as e:
+            print(f"  ❌ {limiter_name:<25} - FAILED: {e}")
+            all_passed = False
+    
+    if all_passed:
+        print("\n✅ All basic tests passed!")
+    else:
+        print("\n⚠️  Some tests failed. Check implementation.")
+    
+    return all_passed
+
+
 def main():
     """Run comprehensive stress tests"""
     print("="*90)
@@ -293,19 +399,39 @@ def main():
     print(f"\nTest Configuration:")
     print(f"  Duration per test: {TEST_DURATION}s")
     print(f"  Concurrent users: {len(USERS)}")
-    print(f"  Rate limiters: Token Bucket, Leaky Bucket, Queue")
+    print(f"  Rate limiters: 6 algorithms (Token, Leaky, Queue, Fixed Window, Sliding Window, Sliding Log)")
     print(f"  Backends: Memory" + (" + Redis" if REDIS_AVAILABLE else ""))
     print(f"\nLimiter Settings:")
     for scope, config in LIMITERS_CONFIG.items():
         print(f"  {scope.capitalize()}: capacity={config['capacity']}, "
               f"fill_rate={config['fill_rate']}/s")
     
-    # Define test matrix
+    print(f"\nUser Patterns:")
+    for user_id, interval in USERS:
+        rate = 1.0 / interval
+        print(f"  {user_id}: {rate:.2f} req/s")
+    
+    # Run basic functionality test first
+    if not test_basic_functionality():
+        print("\n❌ Basic tests failed. Fix issues before running stress tests.")
+        response = input("\nContinue with stress tests anyway? (y/n): ")
+        if response.lower() != 'y':
+            return
+    
+    # Define test matrix - ALL 6 ALGORITHMS
     limiter_classes = [
         (TokenBucketLimiter, "Token Bucket"),
         (LeakyBucketLimiter, "Leaky Bucket"),
         (QueueLimiter, "Queue Limiter"),
     ]
+    
+    # Add window-based limiters if available
+    if FixedWindowRateLimiter:
+        limiter_classes.append((FixedWindowRateLimiter, "Fixed Window"))
+    if SlidingWindowRateLimiter:
+        limiter_classes.append((SlidingWindowRateLimiter, "Sliding Window"))
+    if SlidingWindowLogRateLimiter:
+        limiter_classes.append((SlidingWindowLogRateLimiter, "Sliding Window Log"))
     
     backends = ["memory"]
     redis_client = None
@@ -316,11 +442,23 @@ def main():
         if redis_client:
             backends.append("redis")
     
+    print(f"\n📋 Test Matrix: {len(limiter_classes)} algorithms × {len(backends)} backends = {len(limiter_classes) * len(backends)} tests")
+    print(f"⏱️  Total estimated time: ~{len(limiter_classes) * len(backends) * (TEST_DURATION + 2)}s")
+    
+    input("\nPress ENTER to start tests...")
+    
     # Run all test combinations
     results = []
+    test_num = 0
+    total_tests = len(limiter_classes) * len(backends)
     
     for limiter_class, limiter_name in limiter_classes:
         for backend in backends:
+            test_num += 1
+            print(f"\n{'='*90}")
+            print(f"  TEST {test_num}/{total_tests}: {limiter_name} ({backend.upper()})")
+            print(f"{'='*90}")
+            
             result = run_single_test(
                 limiter_class,
                 limiter_name,
@@ -330,31 +468,68 @@ def main():
             
             if result:
                 results.append(result)
+            else:
+                print(f"⚠️  Test skipped or failed")
             
             # Clean up Redis between tests
             if backend == "redis" and redis_client:
                 cleanup_redis(redis_client)
             
             # Pause between tests
-            time.sleep(1)
+            if test_num < total_tests:
+                print(f"\n⏸️  Pausing 2s before next test...")
+                time.sleep(2)
     
     # Print comparison summary
     print("\n" + "="*90)
     print("  FINAL COMPARISON SUMMARY")
     print("="*90)
-    print(f"{'Limiter':<20} {'Backend':<10} {'Allowed':>10} {'Blocked':>10} "
+    print(f"{'Limiter':<25} {'Backend':<10} {'Allowed':>10} {'Blocked':>10} "
           f"{'Rate/s':>10} {'Success%':>10}")
     print("-"*90)
     
     for r in results:
-        print(f"{r['limiter']:<20} {r['backend']:<10} {r['total_allowed']:>10} "
+        print(f"{r['limiter']:<25} {r['backend']:<10} {r['total_allowed']:>10} "
               f"{r['total_blocked']:>10} {r['rate']:>9.2f} {r['success_rate']:>9.1f}%")
+    
+    # Analyze results
+    print("\n" + "="*90)
+    print("  ANALYSIS")
+    print("="*90)
+    
+    if results:
+        # Group by backend
+        memory_results = [r for r in results if r['backend'] == 'memory']
+        redis_results = [r for r in results if r['backend'] == 'redis']
+        
+        if memory_results:
+            avg_memory_rate = sum(r['rate'] for r in memory_results) / len(memory_results)
+            print(f"\nMemory Backend:")
+            print(f"  Average rate: {avg_memory_rate:.2f} req/s")
+            print(f"  Tests run: {len(memory_results)}")
+        
+        if redis_results:
+            avg_redis_rate = sum(r['rate'] for r in redis_results) / len(redis_results)
+            print(f"\nRedis Backend:")
+            print(f"  Average rate: {avg_redis_rate:.2f} req/s")
+            print(f"  Tests run: {len(redis_results)}")
+        
+        # Find best performing
+        best = max(results, key=lambda x: x['rate'])
+        print(f"\n🏆 Best Performance:")
+        print(f"   {best['limiter']} ({best['backend']}): {best['rate']:.2f} req/s")
+        
+        # Find most restrictive
+        most_restrictive = min(results, key=lambda x: x['success_rate'])
+        print(f"\n🔒 Most Restrictive:")
+        print(f"   {most_restrictive['limiter']} ({most_restrictive['backend']}): {most_restrictive['success_rate']:.1f}% success")
     
     # Close Redis connection
     if redis_client:
         redis_client.close()
     
     print("\n✅ All tests completed!")
+    print("="*90)
 
 
 if __name__ == "__main__":

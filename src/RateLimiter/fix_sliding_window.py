@@ -1,4 +1,5 @@
-import time
+# fix_sliding_window.py
+code = '''import time
 import threading
 from .base import BaseRateLimiter
 
@@ -70,3 +71,18 @@ class SlidingWindowRateLimiter(BaseRateLimiter):
     def reset(self, identifier=None):
         key = self._get_key(identifier)
         self._delete_from_backend(key)
+'''
+
+with open(r'E:\coding\fastApi\src\RateLimiter\sliding_window.py', 'w', encoding='utf-8') as f:
+    f.write(code)
+    
+print("✅ Fixed sliding_window.py")
+
+# Test import
+try:
+    import sys
+    sys.path.insert(0, r'E:\coding\fastApi\src')
+    from RateLimiter.sliding_window import SlidingWindowRateLimiter
+    print("✅ Import works!")
+except Exception as e:
+    print(f"❌ Import failed: {e}")
