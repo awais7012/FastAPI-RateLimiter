@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: fastapi-rate-limiter
+Version: 0.1.0
+Summary: A simple rate limiter for FastAPI
+Author: Awais
+Author-email: ahmadawaisgithub@gmail.com
+Requires-Python: >=3.8
+Requires-Dist: fastapi
+Dynamic: author
+Dynamic: author-email
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

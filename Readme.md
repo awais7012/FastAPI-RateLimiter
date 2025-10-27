@@ -1,203 +1,292 @@
+Got it 👍 You just want me to take **that full README draft** and make it look like a *fully polished GitHub markdown file* — with proper emojis, heading hierarchy, badges, spacing, and visual polish (like how FastAPI, Redis, or Celery repos do it).
 
+Here’s your **final, ready-to-publish `README.md`** version, styled professionally while keeping your original content intact:
 
-````{"variant":"standard","title":"FastAPI Rate Limiter – README","id":"58219"}
-# ⚡ FastAPI Rate Limiter
+````{"id":"92381","variant":"standard","title":"README.md — FastAPI Rate Limiter"}
+# ⚡️ FastAPI RateLimiter
 
-A lightweight, production-ready library providing modern rate limiting algorithms for **FastAPI** and **Python applications**.
+> **High-Performance, Multi-Algorithm Rate Limiting for FastAPI**
 
----
-
-## 🚀 Overview
-
-Rate limiting is one of the most critical components for any API or backend system. It helps:
-- Protect your app and server from excessive requests.
-- Reduce infrastructure costs.
-- Prevent DoS attacks and brute-force exploits.
-- Maintain a consistent and stable user experience.
-
-This library implements **five of the most common and battle-tested rate limiting algorithms**, supporting both **in-memory** and **Redis** backends.
+A compact, battle-tested library of rate limiting algorithms ready to plug into FastAPI apps.  
+Supports **Token Bucket**, **Leaky Bucket**, **Queue-based**, **Fixed Window**, **Sliding Window**, and **Sliding Log** limiters — each available with **in-memory** and **Redis** backends, and usable at **global**, **per-user**, or **per-IP** scope.
 
 ---
 
-## 🧠 Supported Algorithms
-
-| Algorithm | Description |
-|------------|--------------|
-| **Token Bucket** | Allows bursts of traffic up to a fixed capacity, then refills over time. Ideal for APIs that need short bursts. |
-| **Leaky Bucket** | Smoothens request rates by leaking tokens at a fixed rate. Prevents traffic spikes. |
-| **Sliding Window** | Tracks requests in a rolling time window for more accurate enforcement. |
-| **Fixed Window** | Divides time into fixed blocks (e.g., per minute/hour) and counts requests within each block. |
-| **Queue Limiter** | Queues incoming requests up to a limit instead of rejecting them immediately. |
+<p align="center">
+  <img src="https://img.shields.io/badge/FastAPI-Compatible-brightgreen?style=for-the-badge&logo=fastapi" />
+  <img src="https://img.shields.io/badge/Backend-Redis-red?style=for-the-badge&logo=redis" />
+  <img src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python" />
+  <img src="https://img.shields.io/github/license/awais7012/FastAPI-RateLimiter?style=for-the-badge" />
+</p>
 
 ---
 
-## 🧩 Scopes of Limiting
-
-You can apply rate limits on three levels:
-
-| Scope | Description |
-|--------|--------------|
-| **Global** | Limit applies across all users and IPs. Useful for backend-wide throttling. |
-| **Per User** | Each authenticated user has their own limiter. |
-| **IP-Based** | Requests are grouped by IP, useful for login/signup or unauthenticated routes. |
-
-You can mix and match these — for example:
-```python
-# Apply per-user, per-IP, and global rate limits simultaneously
-if not global_limiter.allow_request():
-    return "Global limit exceeded"
-elif not ip_limiter.allow_request(ip):
-    return "IP limit exceeded"
-elif not user_limiter.allow_request(user_id):
-    return "User limit exceeded"
-```
+## 📚 Table of Contents
+- [💡 Why use rate limiting?](#-why-use-rate-limiting)
+- [✨ Key features](#-key-features)
+- [🧮 Algorithms (what & when to use)](#-algorithms-what--when-to-use)
+  - [Token Bucket](#token-bucket)
+  - [Leaky Bucket](#leaky-bucket)
+  - [Queue-based Limiter](#queue-based-limiter)
+  - [Fixed Window](#fixed-window)
+  - [Sliding Window (weighted)](#sliding-window-weighted)
+  - [Sliding Window Log](#sliding-window-log)
+- [⚙️ Installation](#️-installation)
+- [🚀 Quick start (examples)](#-quick-start-examples)
+  - [Memory backend — per-user token bucket](#memory-backend--per-user-token-bucket)
+  - [Redis backend — per-ip leaky bucket](#redis-backend--per-ip-leaky-bucket)
+  - [Global queue limiter example](#global-queue-limiter-example)
+  - [FastAPI middleware integration](#fastapi-middleware-integration)
+- [🧱 Redis vs In-memory tradeoffs](#-redis-vs-in-memory-tradeoffs)
+- [🧪 Testing & stress harnesses](#-testing--stress-harnesses)
+- [🎛️ How to tune limits](#️-how-to-tune-limits)
+- [🧰 Development & contribution](#-development--contribution)
+- [📜 License](#-license)
 
 ---
 
-## 🛠️ Backends
+## 💡 Why use rate limiting?
 
-### 🔹 In-Memory (default)
-- Simple and fast.
-- Best for single-instance apps or testing environments.
-- No external dependencies.
+Rate limiting protects your service from **overload**, **DDoS**, **abusive clients**, and **accidental traffic spikes**. It:
 
-### 🔹 Redis
-- Recommended for **distributed systems** or apps running on multiple servers.
-- Keeps consistent limits across all instances.
-- Requires Redis installed locally or via Docker.
+- prevents one user from consuming all capacity  
+- smooths bursts to preserve downstream resources  
+- enforces fair usage (per-user / per-IP / global)  
+- ensures predictable performance and reliability  
 
-Example Redis setup:
+---
+
+## ✨ Key features
+
+✅ Multiple algorithms for different behaviors (burstiness vs strict pacing)  
+✅ Two backends: in-memory (zero-deps) and Redis (cluster-friendly, cross-instance)  
+✅ Scopes: `user`, `ip`, `global`  
+✅ Helpers: `get_status()`, `get_retry_after()`, `get_wait_time()`  
+✅ Includes stress test harness simulating thousands of concurrent requests  
+
+---
+
+## 🧮 Algorithms — What they do, pros/cons, when to use
+
+### 🪙 Token Bucket
+**Concept:** Tokens are added steadily (`fill_rate`) up to `capacity`. Each request consumes a token.  
+**Pros:** Allows short bursts, maintains steady average rate.  
+**Cons:** Slightly permissive for bursts.  
+**When to use:** APIs where occasional bursts are fine — e.g., file uploads, user-triggered events.  
+**Analogy:** A wallet of tokens you spend to make requests.
+
+---
+
+### 💧 Leaky Bucket
+**Concept:** Requests fill a bucket that leaks at a fixed rate. Overflowed requests are dropped.  
+**Pros:** Enforces smooth, consistent rate.  
+**Cons:** Less tolerant of bursts than Token Bucket.  
+**When to use:** When steady pacing is critical (e.g., dispatching jobs, calling external APIs).
+
+---
+
+### 📦 Queue-based Limiter
+**Concept:** Keeps a queue of recent timestamps (like a rolling window). Allows only `capacity` within `window = capacity / fill_rate`.  
+**Pros:** Predictable, easy to compute wait times.  
+**Cons:** Slightly more strict, stores timestamps.  
+**When to use:** When you need fairness or ordered request flow.
+
+---
+
+### ⏱️ Fixed Window
+**Concept:** Counts all requests within a discrete time window. Resets each interval.  
+**Pros:** Simple, very fast, Redis `INCR` friendly.  
+**Cons:** Boundary bursts possible.  
+**When to use:** Coarse limits (minute/hour/day based quotas).
+
+---
+
+### 🪟 Sliding Window (Weighted)
+**Concept:** Combines current + previous windows proportionally for smoother transitions.  
+**Pros:** Removes boundary spikes, lightweight.  
+**Cons:** Approximation-based.  
+**When to use:** For smoother, low-latency APIs.
+
+---
+
+### 📜 Sliding Log
+**Concept:** Logs timestamps and prunes anything outside the window.  
+**Pros:** Fully accurate; no burst gaps.  
+**Cons:** Memory + CPU heavy; not ideal for huge scale.  
+**When to use:** When exact enforcement is essential (auth endpoints, payment APIs).
+
+---
+
+## ⚙️ Installation
+
 ```bash
-docker run -d -p 6379:6379 redis
+git clone https://github.com/awais7012/FastAPI-RateLimiter.git
+cd FastAPI-RateLimiter
+
+python -m venv venv
+# Activate
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+pip install redis  # optional: Redis backend
 ```
 
-Update your limiter to use Redis:
+---
+
+## 🚀 Quick start (examples)
+
+### 🧠 Memory backend — per-user Token Bucket
+
 ```python
 from RateLimiter.token_bucket import TokenBucketLimiter
+
+# 5-token burst, refill 1 token/sec
+limiter = TokenBucketLimiter(capacity=5, fill_rate=1.0, scope="user", backend="memory")
+
+user_id = "alice"
+if limiter.allow_request(user_id):
+    print("Allowed")
+else:
+    print("429 Too Many Requests")
+```
+
+---
+
+### 🌐 Redis backend — per-IP Leaky Bucket
+
+```python
 import redis
+from RateLimiter.leaky_bucket import LeakyBucketLimiter
 
-r = redis.Redis(host="localhost", port=6379, db=0)
-limiter = TokenBucketLimiter(capacity=10, fill_rate=2, backend="redis", redis_client=r)
+r = redis.Redis.from_url("redis://localhost:6379", decode_responses=True)
+ip_limiter = LeakyBucketLimiter(capacity=3, fill_rate=0.5, scope="ip", backend="redis", redis_client=r)
+
+if ip_limiter.allow_request("198.51.100.7"):
+    print("Processed")
+else:
+    print("Too many requests; retry after:", ip_limiter.get_wait_time("198.51.100.7"))
 ```
 
 ---
 
-## 🧪 Testing All Limiters
+### 🌍 Global Queue Limiter Example
 
-You can run a full-scale stress test using:
-```bash
-python tests/test_all_limiters_comprehensive.py
-```
+```python
+from RateLimiter.queue_limiter import QueueLimiter
 
-This test script:
-- Simulates multiple users with different traffic patterns.
-- Tests **all 5 algorithms**.
-- Tests both **memory** and **Redis** backends.
-- Shows performance, allowed/blocked requests, and success rates.
+global_limiter = QueueLimiter(capacity=100, fill_rate=10.0, scope="global", backend="memory")
 
-Example output:
-```
-============================================================
-  Token Bucket | REDIS Backend | Elapsed: 8.2s
-============================================================
-User           Allowed  Blocked  By User  By IP  By Global  Rate/s
------------------------------------------------------------------
-user_normal         42       13       5       0        8     5.12
-...
-Success Rate: 86.5%
+if not global_limiter.allow_request(None):
+    print("Global limit reached")
 ```
 
 ---
 
-## 🧩 Example: FastAPI Middleware Integration
-
-Here’s how you might use the library inside a FastAPI app:
+### ⚡ FastAPI Middleware Integration
 
 ```python
 from fastapi import FastAPI, Request, HTTPException
 from RateLimiter.token_bucket import TokenBucketLimiter
 
-limiter = TokenBucketLimiter(capacity=10, fill_rate=1, scope="user", backend="memory")
-
 app = FastAPI()
+limiter = TokenBucketLimiter(capacity=5, fill_rate=1.0, scope="user", backend="memory")
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    user_id = request.headers.get("X-User-ID", "guest")
-    if not limiter.allow_request(user_id):
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+async def rate_limit(request: Request, call_next):
+    user = request.headers.get("x-user-id") or request.client.host
+    if not limiter.allow_request(user):
+        raise HTTPException(status_code=429, detail="Too many requests")
     return await call_next(request)
 ```
 
 ---
 
-## 📊 Algorithms Explained
+## 🧱 Redis vs In-memory — Tradeoffs
 
-### 🪣 Token Bucket
-- Each request consumes one token.
-- Tokens refill at a steady rate.
-- If no tokens are available → request is rejected.
+| Backend | Pros | Cons | Use case |
+|----------|------|------|-----------|
+| **In-memory** | ⚡ Super fast, no setup | ❌ Not shared across app instances | Local dev, single-instance apps |
+| **Redis** | 🌍 Shared, atomic, scalable | 🧱 Requires Redis service | Distributed apps / production |
 
-### 💧 Leaky Bucket
-- Requests enter a bucket that leaks at a constant rate.
-- Ensures a steady output even if requests arrive in bursts.
-
-### 🪟 Fixed Window
-- Time is divided into fixed intervals (e.g., 1 minute).
-- If requests exceed capacity within that window → blocked.
-
-### 🪟 Sliding Window
-- Similar to fixed, but window slides continuously over time.
-- More precise for high-frequency APIs.
-
-### 🧾 Queue Limiter
-- Instead of dropping requests, it queues them until processed or timeout.
-
----
-
-## 🧰 Features Summary
-
-✅ 5 Limiter Algorithms  
-✅ Redis or Memory Backend  
-✅ Global / IP / User Scope  
-✅ Thread-Safe Implementation  
-✅ Built-in Stress Testing Script  
-✅ Easy FastAPI Integration  
-
----
-
-## 📦 Installation
+**Run Redis via Docker:**
 
 ```bash
-pip install fastapi-rate-limiter
-```
-
-or directly from source:
-```bash
-git clone https://github.com/yourname/fastapi-rate-limiter
-cd fastapi-rate-limiter
-pip install -r requirements.txt
+docker run -d --name redis -p 6379:6379 redis
 ```
 
 ---
 
-## 👨‍💻 Example Test Script
+## 🧪 Testing & Stress Harnesses
 
-Check out [`test_all_limiters_comprehensive.py`](tests/test_all_limiters_comprehensive.py)  
-This script simulates real-world usage with multiple users and concurrent threads.
+Prebuilt tests in `/tests`:
+
+- `test_token_bucket.py`, `test_user_scope.py`, etc.  
+- `all_limiter_test.py` → runs all limiters, scopes, and backends.
+
+```bash
+python -m tests.all_limiter_test
+```
+
+✅ Simulates:
+- Multi-user concurrency  
+- IP-based vs global limits  
+- Redis + memory backend comparison  
 
 ---
 
-## 🧩 Upcoming Improvements
-- Async-compatible limiters
-- Rate limit headers for HTTP responses
-- Built-in FastAPI dependency injection system
-- Visualization dashboard for Redis stats
+## 🎛️ How to Tune Limits
+
+1. **Scope wisely:**  
+   - `global`: total requests allowed across all users  
+   - `user`: per-user fairness  
+   - `ip`: ideal for unauthenticated clients  
+
+2. **Pick algorithm:**  
+   - Burst-friendly → Token Bucket  
+   - Strict pacing → Leaky Bucket  
+   - Exact precision → Sliding Log  
+
+3. **Set parameters:**  
+   ```python
+   capacity = 10  # burst size
+   fill_rate = 2.0  # steady rate (req/sec)
+   ```
+
+4. **Monitor status:**  
+   ```python
+   limiter.get_status(user_id)
+   limiter.get_wait_time(user_id)
+   ```
 
 ---
 
-## 📄 License
+## 🧰 Development & Contribution
 
-MIT License © 2025 [Ahmad Awais(Romeo)]
+- Fork → Branch → PR flow  
+- Follow PEP8 + consistent docstrings  
+- Tests live in `/tests`  
+- Use `pytest` or direct `python -m tests.<module>`  
+
+For Redis-based work, ensure local Redis or container is running.
+
+---
+
+## 📜 License
+
+```text
+MIT License
+Copyright (c) 2025
+```
+
+---
+
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/awais7012">Ahmed Awais</a><br/>
+  Designed for developers who love clean, scalable FastAPI tooling.
+</p>
 ````
 
+Would you like me to now make the **`USAGE.md`** — where each algorithm (Token, Leaky, Queue, Fixed, Sliding Window, Sliding Log) has its own **FastAPI route + decorator example** and Redis/memory switch usage?
