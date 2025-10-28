@@ -1,29 +1,23 @@
-# Pytho
-*.py[cod]
+# Ignore Python build artifacts
+fastapi_rate_limiter.egg-info/
 *.egg-info/
-*.egg
+build/
+dist/
+
+# Ignore local setup script
+setup.py
+
+# Common Python ignores
+__pycache__/
+*.py[cod]
 *.pyo
 *.pyd
 *.pkl
 
-# Build
-build/
-dist/
-.eggs/
-
-# Environments
+# Virtual environments
 venv/
 .env/
-.env.*
-*.venv/
 
 # IDEs
 .vscode/
 .idea/
-
-# OS junk
-.DS_Store
-Thumbs.db
-
-# Tests cache
-coverage.xml
