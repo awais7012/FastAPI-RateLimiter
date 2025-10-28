@@ -11,3 +11,4 @@ fastapi_rate_limiter.egg-info
 ./venv
 venv
 setup.py
+fastapi_rate_limiter.egg-info

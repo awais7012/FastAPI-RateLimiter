@@ -1,71 +1,63 @@
 # src/RateLimiter/token_bucket.py
 import time
+import threading
 from .base import BaseRateLimiter
 
 
 class TokenBucketLimiter(BaseRateLimiter):
-    """
-    Token Bucket rate limiter implementation.
-    
-    Tokens are added to the bucket at a constant rate (fill_rate per second).
-    Each request consumes 1 token. Request is denied if bucket is empty.
-    Allows bursts up to capacity.
-    """
-    
     def __init__(self, capacity, fill_rate, scope="user", backend="memory", redis_client=None):
         super().__init__(capacity, fill_rate, scope, backend, redis_client)
-        
-        # TTL for automatic cleanup
         self._ttl = int((capacity / fill_rate) * 2) + 60
+        
+        # Add per-key locks for thread safety
+        self._key_locks = {}
+        self._key_locks_lock = threading.Lock()
+
+    def _get_key_lock(self, key):
+        """Get or create a lock for a specific key"""
+        with self._key_locks_lock:
+            if key not in self._key_locks:
+                self._key_locks[key] = threading.Lock()
+            return self._key_locks[key]
 
     def allow_request(self, identifier=None):
-        """
-        Check if request should be allowed based on token bucket algorithm.
-        
-        Args:
-            identifier: User ID, IP address, or None for global scope
-            
-        Returns:
-            bool: True if request is allowed, False otherwise
-        """
         key = self._get_key(identifier)
         now = time.time()
         
-        # Get current bucket state
-        data = self._get_from_backend(key)
-        
-        if data is None:
-            # First request - initialize bucket with (capacity - 1) tokens
+        # Use per-key lock for thread safety
+        lock = self._get_key_lock(key)
+        with lock:
+            data = self._get_from_backend(key)
+            
+            if data is None:
+                new_data = {
+                    "tokens_remaining": self.capacity - 1,
+                    "last_fill_time": now
+                }
+                self._set_to_backend(key, new_data, ttl=self._ttl)
+                return True
+            
+            tokens = float(data.get("tokens_remaining", 0))
+            last_fill = float(data.get("last_fill_time", now))
+            
+            elapsed = now - last_fill
+            tokens_to_add = elapsed * self.fill_rate
+            tokens = min(self.capacity, tokens + tokens_to_add)
+            
+            if tokens >= 1:
+                tokens -= 1
+                allowed = True
+            else:
+                allowed = False
+            
             new_data = {
-                "tokens_remaining": self.capacity - 1,
+                "tokens_remaining": tokens,
                 "last_fill_time": now
             }
             self._set_to_backend(key, new_data, ttl=self._ttl)
-            return True
-        
-        tokens = float(data.get("tokens_remaining", 0))
-        last_fill = float(data.get("last_fill_time", now))
-        
-        # Calculate tokens added since last check
-        elapsed = now - last_fill
-        tokens_to_add = elapsed * self.fill_rate
-        tokens = min(self.capacity, tokens + tokens_to_add)
-        
-        # Check if we have at least 1 token
-        if tokens >= 1:
-            tokens -= 1
-            allowed = True
-        else:
-            allowed = False
-        
-        # Update bucket state
-        new_data = {
-            "tokens_remaining": tokens,
-            "last_fill_time": now
-        }
-        self._set_to_backend(key, new_data, ttl=self._ttl)
-        
-        return allowed
+            
+            return allowed
+    
 
     def reset(self, identifier=None):
         """
