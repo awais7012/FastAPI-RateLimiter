@@ -1,4 +1,4 @@
-# ⚡ FastAPI Rate Limiter
+# ⚡ FastAPI Advanced Rate Limiter
 
 <p align="center">
   <em>High-performance, production-ready rate limiting for FastAPI applications.</em>
@@ -9,6 +9,7 @@
   <a href="https://github.com/awais7012/FastAPI-RateLimiter/network/members"><img src="https://img.shields.io/github/forks/awais7012/FastAPI-RateLimiter?style=social" alt="GitHub forks"></a>
   <a href="https://github.com/awais7012/FastAPI-RateLimiter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/awais7012/FastAPI-RateLimiter" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python Version"></a>
+  <a href="https://pypi.org/project/fastapi-advanced-rate-limiter/"><img src="https://img.shields.io/pypi/v/fastapi-advanced-rate-limiter" alt="PyPI version"></a>
 </p>
 
 <p align="center">
@@ -20,7 +21,7 @@
 
 ---
 
-**FastAPI Rate Limiter** is a battle-tested library providing **6 different rate limiting algorithms** with support for both **in-memory** and **Redis** backends. Perfect for APIs, microservices, and any FastAPI application that needs protection from abuse, overload, or DDoS attacks.
+**FastAPI Advanced Rate Limiter** is a battle-tested library providing **6 different rate limiting algorithms** with support for both **in-memory** and **Redis** backends. Perfect for APIs, microservices, and any FastAPI application that needs protection from abuse, overload, or DDoS attacks.
 
 ---
 
@@ -78,7 +79,7 @@ Rate limiting is essential for:
 
 ```python
 from fastapi import FastAPI, Request, HTTPException
-from RateLimiter import SlidingWindowRateLimiter
+from fastapi_advanced_rate_limiter import SlidingWindowRateLimiter
 import redis
 
 app = FastAPI()
@@ -131,7 +132,21 @@ curl http://localhost:8000/
 
 ## 📦 Installation
 
-### From GitHub (Recommended for now)
+### From PyPI (Recommended)
+
+```bash
+pip install fastapi-advanced-rate-limiter
+```
+
+### With Redis Support
+
+```bash
+pip install fastapi-advanced-rate-limiter redis
+```
+
+### From Source (for Contributors)
+
+If you want to contribute or modify the package:
 
 ```bash
 git clone https://github.com/awais7012/FastAPI-RateLimiter.git
@@ -139,13 +154,9 @@ cd FastAPI-RateLimiter
 pip install -e .
 ```
 
-### With Redis Support
-
-```bash
-pip install -e ".[redis]"
-```
-
 ### With Development Tools
+
+For contributors who want to run tests and development tools:
 
 ```bash
 pip install -e ".[dev]"
@@ -155,7 +166,7 @@ pip install -e ".[dev]"
 
 - **Python**: 3.8+
 - **FastAPI**: 0.68.0+
-- **Redis** (optional): 4.0.0+
+- **Redis** (optional): 4.0.0+ (install separately if using Redis backend)
 
 ---
 
@@ -168,7 +179,7 @@ Choose the right algorithm for your use case:
 **How it works:** Imagine a bucket that slowly fills with tokens. Each request takes a token. If the bucket is empty, requests are denied.
 
 ```python
-from RateLimiter import TokenBucketLimiter
+from fastapi_advanced_rate_limiter import TokenBucketLimiter
 
 limiter = TokenBucketLimiter(
     capacity=10,    # Bucket holds 10 tokens (burst size)
@@ -195,7 +206,7 @@ limiter = TokenBucketLimiter(
 **How it works:** Requests fill a bucket with a hole at the bottom. The bucket leaks at a constant rate. Overflow = rejected.
 
 ```python
-from RateLimiter import LeakyBucketLimiter
+from fastapi_advanced_rate_limiter import LeakyBucketLimiter
 
 limiter = LeakyBucketLimiter(
     capacity=5,     # Bucket capacity
@@ -222,7 +233,7 @@ limiter = LeakyBucketLimiter(
 **How it works:** Count requests in fixed time windows (e.g., per minute). Reset count at window boundaries.
 
 ```python
-from RateLimiter import FixedWindowRateLimiter
+from fastapi_advanced_rate_limiter import FixedWindowRateLimiter
 
 limiter = FixedWindowRateLimiter(
     capacity=1000,  # 1000 requests
@@ -249,7 +260,7 @@ limiter = FixedWindowRateLimiter(
 **How it works:** Combines current and previous window counts with a weighted average to smooth transitions.
 
 ```python
-from RateLimiter import SlidingWindowRateLimiter
+from fastapi_advanced_rate_limiter import SlidingWindowRateLimiter
 
 limiter = SlidingWindowRateLimiter(
     capacity=100,
@@ -276,7 +287,7 @@ limiter = SlidingWindowRateLimiter(
 **How it works:** Logs exact timestamp of each request. Prunes old timestamps outside the window.
 
 ```python
-from RateLimiter import SlidingWindowLogRateLimiter
+from fastapi_advanced_rate_limiter import SlidingWindowLogRateLimiter
 
 limiter = SlidingWindowLogRateLimiter(
     capacity=10,
@@ -303,7 +314,7 @@ limiter = SlidingWindowLogRateLimiter(
 **How it works:** Maintains a queue of recent request timestamps. Similar to Sliding Window Log.
 
 ```python
-from RateLimiter import QueueLimiter
+from fastapi_advanced_rate_limiter import QueueLimiter
 
 limiter = QueueLimiter(
     capacity=50,
@@ -350,7 +361,7 @@ limiter = QueueLimiter(
 ```python
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer
-from RateLimiter import SlidingWindowRateLimiter
+from fastapi_advanced_rate_limiter import SlidingWindowRateLimiter
 
 app = FastAPI()
 security = HTTPBearer()
@@ -374,7 +385,7 @@ async def get_data(user = Depends(get_current_user)):
 
 ```python
 from fastapi import FastAPI, Request, HTTPException
-from RateLimiter import FixedWindowRateLimiter
+from fastapi_advanced_rate_limiter import FixedWindowRateLimiter
 
 app = FastAPI()
 limiter = FixedWindowRateLimiter(capacity=1000, fill_rate=100, scope="ip", backend="redis")
@@ -398,7 +409,7 @@ async def public_endpoint(request: Request):
 ### Example 3: Global Rate Limiting
 
 ```python
-from RateLimiter import LeakyBucketLimiter
+from fastapi_advanced_rate_limiter import LeakyBucketLimiter
 
 # Limit total API traffic
 global_limiter = LeakyBucketLimiter(
@@ -772,12 +783,13 @@ limiter = SlidingWindowRateLimiter(..., backend="redis", redis_client=redis_clie
 ### Import Errors
 
 ```python
-# Problem: ModuleNotFoundError: No module named 'RateLimiter'
-# Solution: Install the package
+# Problem: ModuleNotFoundError: No module named 'fastapi_advanced_rate_limiter'
+# Solution: Install the package from PyPI
 
+pip install fastapi-advanced-rate-limiter
+
+# Or if you cloned the repo
 pip install -e .
-# Or
-pip install -e ".[redis]"
 ```
 
 ---
@@ -801,6 +813,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/awais7012/FastAPI-RateLimiter/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/awais7012/FastAPI-RateLimiter/discussions)
 - 📧 **Email**: ahmadawaisgithub@gmail.com
+- 📦 **PyPI**: [fastapi-advanced-rate-limiter](https://pypi.org/project/fastapi-advanced-rate-limiter/)
 
 ---
 
