@@ -1,5 +1,4 @@
-# Python
-__pycache__/
+# Pytho
 *.py[cod]
 *.egg-info/
 *.egg
@@ -27,5 +26,4 @@ venv/
 Thumbs.db
 
 # Tests cache
-.pytest_cache/
 coverage.xml
