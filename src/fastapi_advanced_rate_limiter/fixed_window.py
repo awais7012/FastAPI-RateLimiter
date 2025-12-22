@@ -5,12 +5,7 @@ from .base import BaseRateLimiter
 
 
 class FixedWindowRateLimiter(BaseRateLimiter):
-    """
-    Fixed Window Rate Limiter - divides time into fixed windows.
-    
-    Pros: Simple, memory efficient
-    Cons: Burst traffic at window boundaries (can get 2x capacity in short time)
-    """
+   
     
     def __init__(self, capacity, fill_rate, scope="user", backend="memory", redis_client=None):
         super().__init__(capacity, fill_rate, scope, backend, redis_client)

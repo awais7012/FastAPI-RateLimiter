@@ -11,9 +11,9 @@ from collections import defaultdict
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from RateLimiter.token_bucket import TokenBucketLimiter
-from RateLimiter.leaky_bucket import LeakyBucketLimiter
-from RateLimiter.queue_limiter import QueueLimiter
+from fastapi_advanced_rate_limiter.token_bucket import TokenBucketLimiter
+from fastapi_advanced_rate_limiter.leaky_bucket import LeakyBucketLimiter
+from fastapi_advanced_rate_limiter.queue_limiter import QueueLimiter
 
 # Redis import
 try:

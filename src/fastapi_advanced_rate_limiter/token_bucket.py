@@ -9,7 +9,7 @@ class TokenBucketLimiter(BaseRateLimiter):
         super().__init__(capacity, fill_rate, scope, backend, redis_client)
         self._ttl = int((capacity / fill_rate) * 2) + 60
         
-        # Add per-key locks for thread safety
+        
         self._key_locks = {}
         self._key_locks_lock = threading.Lock()
 

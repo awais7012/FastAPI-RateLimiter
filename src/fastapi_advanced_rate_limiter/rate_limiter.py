@@ -1,17 +1,10 @@
-# src/RateLimiter/rate_limiter.py
-"""
-Main RateLimiter class that wraps TokenBucketLimiter
-This provides a simpler API for users
-"""
+
 import redis
 from .token_bucket import TokenBucketLimiter
 
 
-class RateLimiter:
-    """
-    Main rate limiter class with simplified API.
-    Automatically handles Redis connection from URL.
-    """
+class fastapi_advanced_rate_limiter:
+   
     
     def __init__(self, fill_rate, capacity, scope="user", backend="memory", redis_url=None):
         """

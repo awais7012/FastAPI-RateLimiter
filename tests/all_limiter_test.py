@@ -18,13 +18,13 @@ if parent_path not in sys.path:
 
 # Try importing from both paths
 try:
-    from RateLimiter.token_bucket import TokenBucketLimiter
-    from RateLimiter.leaky_bucket import LeakyBucketLimiter
-    from RateLimiter.queue_limiter import QueueLimiter
+    from fastapi_advanced_rate_limiter.token_bucket import TokenBucketLimiter
+    from fastapi_advanced_rate_limiter.leaky_bucket import LeakyBucketLimiter
+    from fastapi_advanced_rate_limiter.queue_limiter import QueueLimiter
 except ImportError:
-    from src.RateLimiter.token_bucket import TokenBucketLimiter
-    from src.RateLimiter.leaky_bucket import LeakyBucketLimiter
-    from src.RateLimiter.queue_limiter import QueueLimiter
+    from src.fastapi_advanced_rate_limiter.token_bucket import TokenBucketLimiter
+    from src.fastapi_advanced_rate_limiter.leaky_bucket import LeakyBucketLimiter
+    from src.fastapi_advanced_rate_limiter.queue_limiter import QueueLimiter
 
 # Import window-based limiters
 FixedWindowRateLimiter = None
@@ -32,32 +32,32 @@ SlidingWindowRateLimiter = None
 SlidingWindowLogRateLimiter = None
 
 try:
-    from RateLimiter.fixed_window import FixedWindowRateLimiter
+    from fastapi_advanced_rate_limiter.fixed_window import FixedWindowRateLimiter
 except ImportError:
     try:
-        from src.RateLimiter.fixed_window import FixedWindowRateLimiter
+        from src.fastapi_advanced_rate_limiter.fixed_window import FixedWindowRateLimiter
     except ImportError:
         print("⚠️  FixedWindowRateLimiter not found, will skip")
 
 try:
-    from RateLimiter.sliding_window import SlidingWindowRateLimiter
+    from fastapi_advanced_rate_limiter.sliding_window import SlidingWindowRateLimiter
 except ImportError:
     try:
-        from src.RateLimiter.sliding_window import SlidingWindowRateLimiter
+        from src.fastapi_advanced_rate_limiter.sliding_window import SlidingWindowRateLimiter
     except ImportError:
         print("⚠️  SlidingWindowRateLimiter not found, will skip")
 
 try:
-    from RateLimiter.sliding_window_log import SlidingWindowLogRateLimiter
+    from fastapi_advanced_rate_limiter.sliding_window_log import SlidingWindowLogRateLimiter
 except ImportError:
     try:
-        from src.RateLimiter.sliding_window_log import SlidingWindowLogRateLimiter
+        from src.fastapi_advanced_rate_limiter.sliding_window_log import SlidingWindowLogRateLimiter
     except ImportError:
         print("⚠️  SlidingWindowLogRateLimiter not found, will skip")
 
 # Optional Redis support
 try:
-    import redis
+    ##import redis
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
@@ -88,7 +88,7 @@ REDIS_CONFIG = {
     "host": "localhost",
     "port": 6379,
     "db": 0,
-    "decode_responses": True  # Important for consistent behavior
+    "decode_responses": True  
 }
 
 
@@ -137,7 +137,7 @@ def user_worker(user_id: str, sleep_interval: float, stats: Stats,
     
     while not stop_event.is_set():
         try:
-            # Check rate limiters in order: global -> IP -> user
+            #
             
             # 1. Global limiter (all users share this)
             if global_rl and not global_rl.allow_request(None):

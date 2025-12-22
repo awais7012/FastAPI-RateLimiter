@@ -1,10 +1,10 @@
 ﻿
 from .base import BaseRateLimiter
 from .token_bucket import TokenBucketLimiter
-from .rate_limiter import RateLimiter
+from .rate_limiter import fastapi_advanced_rate_limiter
 
 
-__all__ = ["BaseRateLimiter", "TokenBucketLimiter", "RateLimiter"]
+__all__ = ["BaseRateLimiter", "TokenBucketLimiter", "fastapi_advanced_rate_limiter"]
 
 # Leaky Bucket
 try:

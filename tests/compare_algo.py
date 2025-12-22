@@ -1,8 +1,8 @@
 # compare_algo.py
-r"""
-Compare Token Bucket vs Queue-based rate limiters side-by-side
-Save this to: E:\coding\fastApi\tests\compare_algo.py
-"""
+# r"""
+# Compare Token Bucket vs Queue-based rate limiters side-by-side
+# Save this to: E:\coding\fastApi\tests\compare_algo.py
+# """
 import sys
 import os
 import threading
@@ -14,8 +14,8 @@ src_dir = os.path.abspath(os.path.join(current_dir, '..', 'src'))
 sys.path.insert(0, src_dir)
 
 # Now imports will work
-from RateLimiter.token_bucket import TokenBucketLimiter
-from RateLimiter.queue_limiter import QueueLimiter
+from fastapi_advanced_rate_limiter.token_bucket import TokenBucketLimiter
+from fastapi_advanced_rate_limiter.queue_limiter import QueueLimiter
 import redis
 
 # === CONFIG ===

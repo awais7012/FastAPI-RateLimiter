@@ -8,8 +8,8 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from RateLimiter.token_bucket import TokenBucketLimiter
-from RateLimiter.leaky_bucket import LeakyBucketLimiter
+from fastapi_advanced_rate_limiter.token_bucket import TokenBucketLimiter
+from fastapi_advanced_rate_limiter.leaky_bucket import LeakyBucketLimiter
 
 
 def show_status(limiter, user_id, label):
