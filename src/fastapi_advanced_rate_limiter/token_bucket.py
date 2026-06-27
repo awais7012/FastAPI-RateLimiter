@@ -22,13 +22,84 @@ class TokenBucketLimiter(BaseRateLimiter):
 
     def allow_request(self, identifier=None):
         key = self._get_key(identifier)
+
+        # Use Redis atomic operations (safe across multiple replicas)
+        if self.backend == "redis":
+            return self._allow_request_redis_atomic(key)
+
+        # Use per-key locking for memory backend (single process only)
+        return self._allow_request_memory(key)
+
+    def _allow_request_redis_atomic(self, key):
+        """
+        Atomic implementation using a Redis Lua script.
+
+        The entire refill-check-decrement-store sequence runs inside Redis as a
+        single atomic operation, so concurrent requests from multiple API
+        replicas (or worker processes) cannot lose updates.
+        """
+        lua_script = """
+        local key = KEYS[1]
+        local capacity = tonumber(ARGV[1])
+        local fill_rate = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
+
+        local data = redis.call('GET', key)
+        local tokens, last_fill
+        if data then
+            local state = cjson.decode(data)
+            tokens = tonumber(state.tokens_remaining)
+            last_fill = tonumber(state.last_fill_time)
+        else
+            tokens = capacity
+            last_fill = now
+        end
+
+        -- Refill based on elapsed time
+        local elapsed = now - last_fill
+        tokens = math.min(capacity, tokens + elapsed * fill_rate)
+
+        local allowed = 0
+        if tokens >= 1 then
+            tokens = tokens - 1
+            allowed = 1
+        end
+
+        local new_data = cjson.encode({
+            tokens_remaining = tokens,
+            last_fill_time = now
+        })
+        redis.call('SETEX', key, ttl, new_data)
+
+        return {allowed, tostring(tokens)}
+        """
+
         now = time.time()
-        
+        try:
+            result = self.redis_client.eval(
+                lua_script,
+                1,  # number of keys
+                key,
+                self.capacity,
+                self.fill_rate,
+                now,
+                self._ttl
+            )
+            return bool(result[0])
+        except Exception as e:
+            print(f"Redis Lua script failed: {e}, falling back to non-atomic")
+            return self._allow_request_memory(key)
+
+    def _allow_request_memory(self, key):
+        """Thread-safe implementation for memory backend"""
+        now = time.time()
+
         # Use per-key lock for thread safety
         lock = self._get_key_lock(key)
         with lock:
             data = self._get_from_backend(key)
-            
+
             if data is None:
                 new_data = {
                     "tokens_remaining": self.capacity - 1,
@@ -36,28 +107,28 @@ class TokenBucketLimiter(BaseRateLimiter):
                 }
                 self._set_to_backend(key, new_data, ttl=self._ttl)
                 return True
-            
+
             tokens = float(data.get("tokens_remaining", 0))
             last_fill = float(data.get("last_fill_time", now))
-            
+
             elapsed = now - last_fill
             tokens_to_add = elapsed * self.fill_rate
             tokens = min(self.capacity, tokens + tokens_to_add)
-            
+
             if tokens >= 1:
                 tokens -= 1
                 allowed = True
             else:
                 allowed = False
-            
+
             new_data = {
                 "tokens_remaining": tokens,
                 "last_fill_time": now
             }
             self._set_to_backend(key, new_data, ttl=self._ttl)
-            
+
             return allowed
-    
+
 
     def reset(self, identifier=None):
         """

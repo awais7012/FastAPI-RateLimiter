@@ -58,14 +58,86 @@ class QueueLimiter(BaseRateLimiter):
             bool: True if request is allowed, False otherwise
         """
         key = self._get_key(identifier)
+
+        # Use Redis atomic operations (safe across multiple replicas)
+        if self.backend == "redis":
+            return self._allow_request_redis_atomic(key)
+
+        # Use per-key locking for memory backend (single process only)
+        return self._allow_request_memory(key)
+
+    def _allow_request_redis_atomic(self, key):
+        """
+        Atomic implementation using a Redis Lua script.
+
+        The expire-cleanup-check-append-store sequence runs as a single atomic
+        operation inside Redis, so concurrent requests from multiple API
+        replicas cannot exceed capacity by racing on the same queue state.
+        """
+        lua_script = """
+        local key = KEYS[1]
+        local capacity = tonumber(ARGV[1])
+        local window = tonumber(ARGV[2])
+        local now = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
+
+        local cutoff = now - window
+        local data = redis.call('GET', key)
+        local queue = {}
+        if data then
+            local state = cjson.decode(data)
+            local raw = state.queue
+            if raw then
+                for i = 1, #raw do
+                    local ts = tonumber(raw[i])
+                    if ts > cutoff then
+                        queue[#queue + 1] = ts
+                    end
+                end
+            end
+        end
+
+        local allowed = 0
+        if #queue < capacity then
+            queue[#queue + 1] = now
+            allowed = 1
+        end
+
+        local new_data = cjson.encode({
+            queue = queue,
+            last_update = now
+        })
+        redis.call('SETEX', key, ttl, new_data)
+
+        return {allowed}
+        """
+
         now = time.time()
-        
+        try:
+            result = self.redis_client.eval(
+                lua_script,
+                1,  # number of keys
+                key,
+                self.capacity,
+                self._window,
+                now,
+                self._ttl
+            )
+            return bool(result[0])
+        except Exception as e:
+            print(f"Redis Lua script failed: {e}, falling back to non-atomic")
+            return self._allow_request_memory(key)
+
+    def _allow_request_memory(self, key):
+        """Thread-safe implementation for memory backend"""
+        now = time.time()
+
         # Use per-key lock for thread safety
         lock = self._get_key_lock(key)
         with lock:
             # Get current queue state
             data = self._get_from_backend(key)
-            
+
             if data is None:
                 # First request - initialize queue
                 new_data = {
@@ -74,26 +146,26 @@ class QueueLimiter(BaseRateLimiter):
                 }
                 self._set_to_backend(key, new_data, ttl=self._ttl)
                 return True
-            
+
             queue = data.get("queue", [])
-            
+
             # Remove expired requests
             queue = self._cleanup_queue(queue, now)
-            
+
             # Check if we have capacity for a new request
             if len(queue) < self.capacity:
                 queue.append(now)
                 allowed = True
             else:
                 allowed = False
-            
+
             # Update storage
             new_data = {
                 "queue": queue,
                 "last_update": now
             }
             self._set_to_backend(key, new_data, ttl=self._ttl)
-            
+
             return allowed
 
     def reset(self, identifier=None):
